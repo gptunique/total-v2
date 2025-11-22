@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>택배 대량조회기 - CJ/한진/로젠 지원 - kkddss Secret - 2025 Ver.</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  body {font-family:'Malgun Gothic',sans-serif;background:linear-gradient(135deg,#003b7f,#0066cc);margin:0;padding:0;min-height:100vh;color:#333;}
+  .container {max-width:1100px;margin:20px auto;background:white;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.3);overflow:hidden;}
+  .header {background:#003b7f;color:white;padding:25px;text-align:center;font-size:26px;font-weight:bold;}
+  .header small {display:block;font-size:14px;margin-top:8px;opacity:0.9;}
+  .input-area {padding:30px;background:#f8fbff;text-align:center;}
+  .carrier-buttons {display:flex;justify-content:center;gap:10px;margin-bottom:20px;}
+  .carrier-btn {padding:10px 20px;background:#ddd;color:#333;border:none;border-radius:50px;cursor:pointer;}
+  .carrier-btn.active {background:#003b7f;color:white;}
+  textarea {width:95%;max-width:900px;height:200px;border:2px solid #003b7f;border-radius:10px;padding:15px;font-size:16px;}
+  .btn {margin-top:15px;padding:16px 40px;background:#003b7f;color:white;border:none;border-radius:50px;font-size:18px;cursor:pointer;box-shadow:0 5px 15px rgba(0,59,127,0.4);}
+  .btn:hover {background:#002b5f;transform:translateY(-2px);}
+  .clear-btn {padding:10px 20px;background:#ff4d4d;color:white;border:none;border-radius:50px;cursor:pointer;margin-left:10px;}
+  .result-area {padding:30px;min-height:300px;}
+  .log {text-align:center;padding:18px;background:#e3f2fd;color:#00695c;font-weight:bold;border-radius:10px;margin-bottom:25px;font-size:18px;}
+  table {width:100%;border-collapse:collapse;margin-top:15px;box-shadow:0 3px 10px rgba(0,0,0,0.1);}
+  th {background:#003b7f;color:white;padding:15px;}
+  td {padding:12px;border-bottom:1px solid #eee;text-align:center;}
+  .status-done {background:#e8f5e8 !important;color:#1b5e20;font-weight:bold;}
+  .status-ing {background:#fff8e1 !important;color:#e65100;font-weight:bold;}
+  .status-wait {background:#e1f5fe !important;color:#01579b;}
+  .status-fail {background:#ffebee !important;color:#c62828;}
+  .detail-btn {background:none;border:none;color:#003b7f;font-weight:bold;cursor:pointer;text-decoration:underline;}
+  .detail-box {margin:30px 0;padding:25px;background:#f8fbff;border:2px solid #003b7f;border-radius:12px;display:none;}
+  .delivery-step {display:flex;justify-content:space-between;margin:25px 0;position:relative;height:80px;align-items:center;}
+  .delivery-step::before {content:'';position:absolute;top:40px;left:5%;right:5%;height:6px;background:#ddd;z-index:1;}
+  .delivery-step::after {content:'';position:absolute;top:40px;left:5%;height:6px;background:#003b7f;z-index:2;width:var(--progress,0%);}
+  .step {flex:1;text-align:center;z-index:3;}
+  .circle {width:50px;height:50px;border-radius:50%;background:#ddd;color:#666;margin:0 auto 10px;line-height:50px;font-weight:bold;font-size:18px;}
+  .step.on .circle {background:#003b7f;color:white;}
+  .step-label {font-size:13px;color:#444;}
+  .track-table {width:100%;margin-top:20px;border-collapse:collapse;}
+  .track-table th {background:#003b7f;color:white;}
+  .track-table td {padding:10px;border:1px solid #ddd;}
+  .btn-group {text-align:center;margin:40px 0;}
+  .btn-save {padding:14px 35px;margin:10px;border:none;border-radius:50px;color:white;font-size:16px;cursor:pointer;}
+  .csv {background:#43a047;}
+  .excel {background:#fb8c00;}
+  footer {text-align:center;padding:20px;color:white;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    택배 실시간 대량조회 - CJ/한진/로젠 지원 - kkddss Secret - 2025 Ver.
+    <small>전 세계 어디서나 접속 · 상세이력 포함 · 엑셀/CSV 저장 (API/스크래핑 기반)</small>
+  </div>
+ 
+  <div class="input-area">
+    <div class="carrier-buttons">
+      <button class="carrier-btn active" data-carrier="cj">CJ대한통운</button>
+      <button class="carrier-btn" data-carrier="hanjin">한진택배</button>
+      <button class="carrier-btn" data-carrier="logen">로젠택배</button>
+    </div>
+    <textarea id="numbers" placeholder="송장번호를 한 줄에 하나씩 입력하세요 (최대 500건)&#10;예시 (CJ): 475959272641&#10;예시 (한진): 460757574546&#10;예시 (로젠): 1234567890123"></textarea><br>
+    <button class="btn" onclick="start()">조회 시작</button>
+  </div>
+ 
+  <div class="result-area">
+    <div id="log" class="log">택배사 선택 후 송장번호를 입력하고 [조회 시작] 버튼을 눌러주세요</div>
+    <div id="result"></div>
+  </div>
+</div>
+<footer>
+  택배 대량조회 전용 사이트 · 언제 어디서나 무료 사용 가능
+</footer>
+<script>
+let allResults = [];
+const WORKER_URL = "https://logen-api.gpt00unique.workers.dev/track"; // 로젠 API URL
+
+// 택배사 버튼 이벤트
+const carrierBtns = document.querySelectorAll('.carrier-btn');
+carrierBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    carrierBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+// textarea paste 이벤트 (자동 줄바꿈)
+const numbersTextarea = document.getElementById('numbers');
+numbersTextarea.addEventListener('paste', (e) => {
+  e.preventDefault();
+  const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+  const parsed = pastedText.split(/[\s,]+/).filter(x => x.trim()).join('\n');
+  numbersTextarea.value = parsed;
+});
+
+// 공통 proxy (한진용)
+async function proxy(url) {
+  return fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`).then(r => r.text());
+}
+
+// CJ 쿼리 함수
+async function queryCJ(num) {
+  const url = `https://apis.tracker.delivery/carriers/kr.cjlogistics/tracks/${num}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('API 응답 오류');
+    const data = await response.json();
+    let status = data.state ? data.state.text : "조회불가";
+    let location = data.progresses && data.progresses.length > 0 ? data.progresses[data.progresses.length - 1].location.name : "정보없음";
+    let lastEventAt = data.progresses && data.progresses.length > 0 ? data.progresses[data.progresses.length - 1].time : "";
+    let origin = data.from ? data.from.name : "";
+    let destination = data.to ? data.to.name : "";
+    let progress = 0;
+    if (status.includes('배송완료')) progress = 100;
+    else if (status.includes('배송출발') || status.includes('배송 중')) progress = 90;
+    else if (status.includes('도착')) progress = 75;
+    else if (status.includes('이동중')) progress = 50;
+    else if (status.includes('집화') || status.includes('입고')) progress = 30;
+    else if (status.includes('접수')) progress = 15;
+    const tracks = data.progresses ? data.progresses.map(p => ({
+      date: p.time.split('T')[0],
+      time: p.time.split('T')[1].split('+')[0],
+      place: p.location.name,
+      desc: `${p.status.text} - ${p.description || ''}`
+    })) : [];
+    return {status, rawStatus: status, location, lastEventAt, origin, destination, progress, tracks, trackUrl: `https://trace.cjlogistics.com/next/tracking.html?wblNo=${num}`, error: null};
+  } catch (e) {
+    return {status: "조회불가", location: "네트워크 오류", lastEventAt: "", origin: "", destination: "", progress: 0, tracks: [], trackUrl: "", error: e.message};
+  }
+}
+
+// 한진 쿼리 함수
+async function queryHanjin(num) {
+  const url = `https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&schLang=KR&wblnumText=${num}&wblnum=${num}`;
+  try {
+    const html = await proxy(url);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    let status = "조회불가", location = "정보없음", lastEventAt = "", origin = "", destination = "", progress = 0;
+    if (html.includes('배송완료')) { status = "배송완료"; location = "고객님 댁"; progress = 100; }
+    else if (html.includes('배송출발') || html.includes('배송 중')) { status = "배송출발"; location = "배송 중"; progress = 90; }
+    else if (html.includes('터미널') && html.includes('도착')) { status = "배송터미널 도착"; location = doc.querySelector(".w-org")?.textContent.trim() || "터미널"; progress = 75; }
+    else if (html.includes('이동중')) { status = "발송중"; location = "이동 중"; progress = 50; }
+    else if (html.includes('입고') || html.includes('집하')) { status = "집하 완료"; location = "터미널 입고"; progress = 30; }
+    else if (html.includes('접수')) { status = "상품접수"; location = "접수 완료"; progress = 15; }
+    const tracks = [];
+    doc.querySelectorAll(".waybill-tbl tbody tr").forEach(tr => {
+      const tds = tr.querySelectorAll("td");
+      if (tds.length >= 4) {
+        tracks.push({
+          date: tds[0].textContent.trim(),
+          time: tds[1].textContent.trim(),
+          place: tds[2].textContent.trim(),
+          desc: tds[3].innerText.trim().replace(/\n/g, " → ")
+        });
+      }
+    });
+    if (tracks.length > 0) {
+      lastEventAt = `${tracks[0].date} ${tracks[0].time}`;
+      origin = tracks[tracks.length - 1].place; // 첫 이벤트 출발
+      destination = tracks[0].place; // 마지막 이벤트 도착
+    }
+    return {status, rawStatus: status, location, lastEventAt, origin, destination, progress, tracks: tracks.reverse().slice(0,20), trackUrl: url, error: null};
+  } catch (e) {
+    return {status: "조회실패", location: "네트워크 오류", lastEventAt: "", origin: "", destination: "", progress: 0, tracks: [], trackUrl: "", error: e.message};
+  }
+}
+
+// 로젠 쿼리 함수 (API 호출)
+async function queryLogen(nums) { // 로젠은 병렬로 invoices 전송
+  try {
+    const qs = new URLSearchParams({ invoices: nums.join(",") });
+    const res = await fetch(`${WORKER_URL}?${qs.toString()}`);
+    if (!res.ok) throw new Error(`오류: ${res.status}`);
+    const json = await res.json();
+    return json.map(r => ({
+      status: r.standardStatus || "조회불가",
+      rawStatus: r.rawStatus || "",
+      location: r.destination || "정보없음",
+      lastEventAt: r.lastEventAt || "",
+      origin: r.origin || "",
+      destination: r.destination || "",
+      progress: r.standardStatus === "DELIVERED" ? 100 : r.standardStatus === "OUT_FOR_DELIVERY" ? 90 : 75, // 간단 매핑
+      tracks: r.history || [], // history 배열
+      trackUrl: r.trackUrl || "",
+      error: r.error || null
+    }));
+  } catch (e) {
+    return nums.map(num => ({status: "조회불가", location: "네트워크 오류", lastEventAt: "", origin: "", destination: "", progress: 0, tracks: [], trackUrl: "", error: e.message}));
+  }
+}
+
+// 시작 함수
+async function start() {
+  const activeCarrierBtn = document.querySelector('.carrier-btn.active');
+  if (!activeCarrierBtn) return alert("택배사를 선택해주세요!");
+  const carrier = activeCarrierBtn.dataset.carrier;
+  const input = numbersTextarea.value.trim();
+  if (!input) return alert("송장번호를 입력해주세요!");
+  const nums = input.split("\n").map(x=>x.trim()).filter(x=>x);
+ 
+  document.getElementById("result").innerHTML = `<table id="tbl"><tr><th>순번</th><th>송장번호</th><th>상태</th><th>위치</th><th>마지막 이벤트</th><th>출발</th><th>도착</th><th>상세/링크</th><th>에러</th></tr></table>`;
+  document.getElementById("log").innerHTML = `<div class="log">조회 시작중... (0/${nums.length})</div>`;
+  allResults = [];
+  const table = document.getElementById("tbl");
+  let results = [];
+  if (carrier === "logen") {
+    results = await queryLogen(nums);
+    results.forEach((res, i) => {
+      res.invoice = nums[i];
+      allResults.push({
+        순번: i+1,
+        송장번호: nums[i],
+        상태: res.status,
+        위치: res.location,
+        마지막이벤트: res.lastEventAt,
+        출발: res.origin,
+        도착: res.destination,
+        상세이력: res.tracks.map(t=>`${t.time} | ${t.location} | ${t.status} - ${t.memo || ''}`).join("\n")
+      });
+      const row = table.insertRow();
+      row.className = res.status === "DELIVERED" ? "status-done" : "status-ing";
+      if (res.error) row.className = "status-fail";
+      row.innerHTML = `<td>${i+1}</td><td><strong>${nums[i]}</strong></td><td>${res.status}</td><td>${res.location}</td><td>${res.lastEventAt}</td><td>${res.origin}</td><td>${res.destination}</td>
+        <td>${res.trackUrl ? `<a href="${res.trackUrl}" target="_blank">링크</a>` : ''} <button class="detail-btn" onclick="showDetail(${i})">상세</button></td><td>${res.error || ''}</td>`;
+    });
+  } else {
+    for (let i = 0; i < nums.length; i++) {
+      document.getElementById("log").innerHTML = `<div class="log">조회 중 → ${nums[i]} (${i+1}/${nums.length})</div>`;
+      const res = carrier === "cj" ? await queryCJ(nums[i]) : await queryHanjin(nums[i]);
+      results.push(res);
+      allResults.push({
+        순번: i+1,
+        송장번호: nums[i],
+        상태: res.status,
+        위치: res.location,
+        마지막이벤트: res.lastEventAt,
+        출발: res.origin,
+        도착: res.destination,
+        상세이력: res.tracks.map(t=>`${t.date || ''} ${t.time || ''} | ${t.place || ''} | ${t.desc || ''}`).join("\n")
+      });
+      const row = table.insertRow();
+      row.className = res.status.includes("완료") ? "status-done" : 
+                      (res.status.includes("출발") || res.status.includes("도착")) ? "status-ing" : "status-wait";
+      if (res.error || res.status === "조회불가") row.className = "status-fail";
+      row.innerHTML = `<td>${i+1}</td><td><strong>${nums[i]}</strong></td><td>${res.status}</td><td>${res.location}</td><td>${res.lastEventAt}</td><td>${res.origin}</td><td>${res.destination}</td>
+        <td>${res.trackUrl ? `<a href="${res.trackUrl}" target="_blank">링크</a>` : ''} <button class="detail-btn" onclick="showDetail(${i})">상세</button></td><td>${res.error || ''}</td>`;
+      await new Promise(r=>setTimeout(r, Math.random()*900+700));
+    }
+  }
+  document.getElementById("log").innerHTML = `<div class="log" style="background:#d4edda;color:green;">조회 완료! (${nums.length}건 처리됨)</div>`;
+  document.getElementById("result").innerHTML += `<div class="btn-group">
+    <button class="btn-save csv" onclick="saveCSV()">CSV 저장</button>
+    <button class="btn-save excel" onclick="saveExcel()">엑셀 저장 (상세이력 포함)</button>
+    <button class="clear-btn" onclick="clearResults()">Clear</button>
+  </div>`;
+}
+
+// Clear 함수
+function clearResults() {
+  numbersTextarea.value = '';
+  document.getElementById("result").innerHTML = '';
+  document.getElementById("log").innerHTML = '송장번호를 입력하고 [조회 시작] 버튼을 눌러주세요';
+  allResults = [];
+}
+
+// 상세 보기 함수 (공통)
+function showDetail(i) {
+  document.querySelectorAll(".detail-box").forEach(d=>d.remove());
+  const d = allResults[i];
+  const progress = d.상태.includes("완료")?100:d.상태.includes("출발")?90:d.상태.includes("도착")?75:50;
+ 
+  const html = `<div class="detail-box" style="display:block">
+    <h3>운송장번호: ${d.송장번호} → ${d.상태}</h3>
+    <div class="delivery-step" style="--progress:${progress}%">
+      <div class="step ${progress>=15?'on':''}"><div class="circle">1</div><div class="step-label">접수</div></div>
+      <div class="step ${progress>=30?'on':''}"><div class="circle">2</div><div class="step-label">집하</div></div>
+      <div class="step ${progress>=50?'on':''}"><div class="circle">3</div><div class="step-label">이동중</div></div>
+      <div class="step ${progress>=75?'on':''}"><div class="circle">4</div><div class="step-label">도착</div></div>
+      <div class="step ${progress>=90?'on':''}"><div class="circle">5</div><div class="step-label">출발</div></div>
+      <div class="step ${progress>=100?'on':''}"><div class="circle">6</div><div class="step-label">완료</div></div>
+    </div>
+    <table class="track-table"><tr><th>일자</th><th>시간</th><th>위치</th><th>내용</th></tr>
+      ${d.상세이력 ? d.상세이력.split("\n").map(l=> {
+        const [dt, tm, pl, ...desc] = l.split(" | ");
+        return `<tr><td>${dt||""}</td><td>${tm||""}</td><td>${pl||""}</td><td style="text-align:left">${desc.join(" | ")||""}</td></tr>`;
+      }).join("") : "<tr><td colspan=4>내역 없음</td></tr>"}
+    </table>
+    <div style="text-align:right;margin-top:15px"><button class="btn" style="padding:10px 25px;font-size:14px" onclick="this.parentElement.parentElement.remove()">닫기</button></div>
+  </div>`;
+  document.getElementById("result").insertAdjacentHTML("beforeend", html);
+}
+
+// CSV 저장
+function saveCSV() {
+  let csv = "\uFEFF순번,송장번호,상태,위치,마지막이벤트,출발,도착,상세이력\n" + allResults.map(r=>`${r.순번},"${r.송장번호}","${r.상태}","${r.위치}","${r.마지막이벤트}","${r.출발}","${r.도착}","${r.상세이력.replace(/"/g,'""')}"`).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  a.download = `택배_조회결과_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// Excel 저장
+function saveExcel() {
+  const data = allResults.map(r=>({순번:r.순번,송장번호:r.송장번호,상태:r.상태,위치:r.위치,마지막이벤트:r.마지막이벤트,출발:r.출발,도착:r.도착,상세이력:r.상세이력}));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws["!cols"] = [{wch:8},{wch:16},{wch:12},{wch:20},{wch:20},{wch:20},{wch:20},{wch:90}];
+  XLSX.utils.book_append_sheet(wb,ws,"택배조회");
+  XLSX.writeFile(wb,`택배_조회결과_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+</script>
+</body>
+</html>
