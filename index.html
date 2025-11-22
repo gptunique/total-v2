@@ -59,7 +59,7 @@
       <button class="carrier-btn" data-carrier="hanjin">한진택배</button>
       <button class="carrier-btn" data-carrier="logen">로젠택배</button>
     </div>
-    <textarea id="numbers" placeholder="송장번호를 한 줄에 하나씩 입력하세요 (최대 500건)&#10;예시 (CJ): 475959272641&#10;예시 (한진): 460757574546&#10;예시 (로젠): 1234567890123"></textarea><br>
+    <textarea id="numbers" placeholder="송장번호를 한 줄에 하나씩 입력하세요 (최대 500건)&#10;예시: 475959272641"></textarea><br>
     <button class="btn" onclick="start()">조회 시작</button>
   </div>
  
@@ -81,8 +81,18 @@ carrierBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     carrierBtns.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    updatePlaceholder(btn.dataset.carrier);
   });
 });
+
+// 플레이스홀더 업데이트 함수
+function updatePlaceholder(carrier) {
+  let example = '';
+  if (carrier === 'cj') example = '475959272641';
+  else if (carrier === 'hanjin') example = '460757574546';
+  else if (carrier === 'logen') example = '1234567890123';
+  document.getElementById('numbers').placeholder = `송장번호를 한 줄에 하나씩 입력하세요 (최대 500건)&#10;예시: ${example}`;
+}
 
 // textarea paste 이벤트 (자동 줄바꿈)
 const numbersTextarea = document.getElementById('numbers');
@@ -165,8 +175,8 @@ async function queryHanjin(num) {
   }
 }
 
-// 로젠 쿼리 함수 (API 호출)
-async function queryLogen(nums) { // 로젠은 병렬로 invoices 전송
+// 로젠 쿼리 함수
+async function queryLogen(nums) {
   try {
     const qs = new URLSearchParams({ invoices: nums.join(",") });
     const res = await fetch(`${WORKER_URL}?${qs.toString()}`);
@@ -179,8 +189,8 @@ async function queryLogen(nums) { // 로젠은 병렬로 invoices 전송
       lastEventAt: r.lastEventAt || "",
       origin: r.origin || "",
       destination: r.destination || "",
-      progress: r.standardStatus === "DELIVERED" ? 100 : r.standardStatus === "OUT_FOR_DELIVERY" ? 90 : 75, // 간단 매핑
-      tracks: r.history || [], // history 배열
+      progress: r.standardStatus === "DELIVERED" ? 100 : r.standardStatus === "OUT_FOR_DELIVERY" ? 90 : 75,
+      tracks: r.history || [],
       trackUrl: r.trackUrl || "",
       error: r.error || null
     }));
@@ -308,6 +318,9 @@ function saveExcel() {
   XLSX.utils.book_append_sheet(wb,ws,"택배조회");
   XLSX.writeFile(wb,`택배_조회결과_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
+
+// 초기 플레이스홀더 설정
+updatePlaceholder('cj');
 </script>
 </body>
 </html>
